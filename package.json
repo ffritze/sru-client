@@ -10,6 +10,7 @@
   "license": "LGPL-3.0+",
   "dependencies": {
     "node-fetch": "^2.2.0",
+    "xml-writer": "^1.7.0",
     "xmldom": "^0.1.27"
   }
 }

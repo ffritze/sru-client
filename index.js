@@ -30,6 +30,7 @@
 var fetch = require('node-fetch');
 var DOMParser = require('xmldom').DOMParser;
 var XMLSerializer = require('xmldom').XMLSerializer;
+var XMLWriter = require('xml-writer');
 
 const DEFAULT_VERSION = '1.1';
 const MAXIMUM_RECORDS = '100';
@@ -44,13 +45,16 @@ function SRU({serverUrl, version, maximumRecords, recordSchema}) {
 		searchRetrieve
 	};
 
-	async function searchRetrieve({query,title,creator}) { // eslint-disable-line require-await
+	async function searchRetrieve({query,title,creator,xmlPrefix}) { // eslint-disable-line require-await
 		return pump();
 
 		async function pump(startRecord = 1) {
 			let lastRecordPosition;
             var url;
-            var results=[];
+            var results="";
+            var xw = new XMLWriter;
+            xw.startDocument('1.0', 'UTF-8');
+            xw.startElement("records");
 			if (`${query}` != "undefined") {
 				url = `${serverUrl}?operation=searchRetrieve&version=${version}&maximumRecords=${maximumRecords}&recordSchema=${recordSchema}&startRecord=${startRecord}&query=%22${query}%22`;
 			} else if (`${title}` != "undefined") {
@@ -58,11 +62,12 @@ function SRU({serverUrl, version, maximumRecords, recordSchema}) {
 			} else if (`${creator}` != "undefined") {
 				url = `${serverUrl}?operation=searchRetrieve&version=${version}&maximumRecords=${maximumRecords}&recordSchema=${recordSchema}&startRecord=${startRecord}&query=${recordSchema}.creator=%22${creator}%22`;
             }
+            console.log(url);
 			return await fetch(url).then( res => {
                 return res.text().then(function(result) {
                     const doc = new DOMParser().parseFromString(result,'text/xml');
-                    const numberOfRecords = Number(doc.getElementsByTagName('zs:numberOfRecords').item(0).textContent);
-                    const records = doc.getElementsByTagName('zs:record');
+                    const numberOfRecords = Number(doc.getElementsByTagName(xmlPrefix+'numberOfRecords').item(0).textContent);
+                    const records = doc.getElementsByTagName(xmlPrefix+'record');
                     for (let i = 0; i < records.length; i++) {
                         const record = records.item(i);
 
@@ -70,7 +75,8 @@ function SRU({serverUrl, version, maximumRecords, recordSchema}) {
                             const childNode = record.childNodes.item(k);
 
                             if (childNode.localName === 'recordData') {
-                                results.push(new XMLSerializer().serializeToString(childNode));
+                                var cNode=childNode.childNodes.item(0);
+                                results=results+(new XMLSerializer().serializeToString(cNode));
                             } else if (childNode.localName === 'recordPosition' && i === records.length - 1) {
                                 lastRecordPosition = Number(childNode.textContent);
                             }
@@ -79,7 +85,10 @@ function SRU({serverUrl, version, maximumRecords, recordSchema}) {
                     if (lastRecordPosition < numberOfRecords) {
                         return pump(lastRecordPosition + 1, results);
                     }
-                    return results;
+                    xw.writeRaw(results.toString());
+                    xw.endElement();
+                    xw.endDocument();
+                    return xw.toString();
                 });
             }, reason => {
                 console.log(reason); // Error!
